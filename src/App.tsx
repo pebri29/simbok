@@ -820,29 +820,32 @@ const FolderModal = ({
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
-  onSave: (name: string, icon: string, parentId: string | null) => void,
+  onSave: (name: string, icon: string, parentId: string | null, color?: string) => void,
   editingFolder: FirebaseCategoryInfo | null,
   categories: FirebaseCategoryInfo[]
 }) => {
   const [name, setName] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('Folder');
+  const [selectedColor, setSelectedColor] = useState(CATEGORY_COLORS[0]);
   const [parentId, setParentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (editingFolder) {
       setName(editingFolder.name);
       setSelectedIcon(editingFolder.icon);
+      setSelectedColor(editingFolder.color || CATEGORY_COLORS[0]);
       setParentId(editingFolder.parentId || null);
     } else {
       setName('');
       setSelectedIcon('Folder');
+      setSelectedColor(CATEGORY_COLORS[0]);
       setParentId(null);
     }
   }, [editingFolder, isOpen]);
 
   const handleSubmit = () => {
     if (!name) return;
-    onSave(name, selectedIcon, parentId);
+    onSave(name, selectedIcon, parentId, selectedColor);
     setName('');
     onClose();
   };
@@ -873,10 +876,10 @@ const FolderModal = ({
             </button>
             
             <h2 className="text-2xl font-bold text-slate-900 mb-2">
-              {editingFolder ? 'Edit Folder' : 'Tambah Folder Baru'}
+              {editingFolder ? 'Edit Kategori' : 'Tambah Kategori Baru'}
             </h2>
             <p className="text-slate-500 mb-6">
-              {editingFolder ? 'Ubah informasi folder Anda.' : 'Berikan nama dan ikon untuk kategori folder baru Anda.'}
+              {editingFolder ? 'Ubah informasi kategori Anda.' : 'Berikan nama, ikon, dan warna untuk kategori baru Anda.'}
             </p>
             
             <div className="space-y-6">
@@ -921,6 +924,23 @@ const FolderModal = ({
                     >
                       <item.icon size={20} />
                     </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Pilih Warna Folder</label>
+                <div className="grid grid-cols-4 gap-3">
+                  {CATEGORY_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      onClick={() => setSelectedColor(color)}
+                      className={`h-10 rounded-xl transition-all border-2 ${color} ${
+                        selectedColor === color 
+                        ? 'border-blue-600 scale-105 shadow-md' 
+                        : 'border-transparent opacity-70 hover:opacity-100'
+                      }`}
+                    />
                   ))}
                 </div>
               </div>
@@ -1044,18 +1064,18 @@ export default function App() {
     }
   };
 
-  const handleSaveFolder = async (name: string, icon: string, parentId: string | null) => {
+  const handleSaveFolder = async (name: string, icon: string, parentId: string | null, color?: string) => {
     try {
       if (editingFolder) {
-        await saveCategory({ ...editingFolder, name, icon, parentId });
+        await saveCategory({ ...editingFolder, name, icon, parentId, color: color || editingFolder.color });
         setEditingFolder(null);
       } else {
         if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
           alert("Kategori dengan nama ini sudah ada.");
           return;
         }
-        const color = CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length];
-        await saveCategory({ name, color, icon, parentId });
+        const finalColor = color || CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length];
+        await saveCategory({ name, color: finalColor, icon, parentId });
       }
     } catch (error) {
       console.error("Error saving category:", error);
@@ -1209,7 +1229,7 @@ export default function App() {
             
             {/* Category List in Sidebar */}
             {categories.length > 0 && (
-              <div className="ml-4 flex flex-col gap-1 mb-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+              <div className="ml-4 flex flex-col gap-1 mb-2 max-h-64 overflow-y-auto custom-scrollbar pr-2">
                 {categories.filter(cat => !cat.parentId).map(cat => {
                   const Icon = ICON_MAP[cat.icon] || Folder;
                   const isActive = activeMenu === 'archive' && selectedFolder === cat.name;
@@ -1234,15 +1254,6 @@ export default function App() {
               </div>
             )}
 
-            <div className="px-4 py-2">
-              <button 
-                onClick={handleAddFolderClick}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-50 text-blue-600 rounded-xl font-bold hover:bg-blue-100 transition-all border border-blue-100"
-              >
-                <Plus size={18} />
-                <span>Tambah Kategori</span>
-              </button>
-            </div>
             <SidebarItem 
               icon={FileText} 
               label="Dokumen" 
@@ -1539,10 +1550,10 @@ export default function App() {
                       {!selectedFolder && (
                         <button 
                           onClick={handleAddFolderClick}
-                          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-2xl text-slate-600 font-semibold hover:bg-slate-50 transition-all shadow-sm"
+                          className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
                         >
-                          <Plus size={18} />
-                          Folder Baru
+                          <Plus size={20} />
+                          Tambah Kategori
                         </button>
                       )}
                       <div className="flex items-center gap-3 bg-white p-1.5 rounded-2xl shadow-sm border border-slate-100">
@@ -1607,7 +1618,7 @@ export default function App() {
                       className="bento-card border-dashed border-2 border-slate-200 bg-transparent flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all py-8"
                     >
                       <Plus size={32} />
-                      <span className="font-bold">Tambah Folder</span>
+                      <span className="font-bold">Tambah Kategori</span>
                     </button>
                   </div>
 
