@@ -51,10 +51,10 @@ import {
   saveCategory, 
   removeCategory,
   DocumentData,
-  CategoryInfo as FirebaseCategoryInfo
-} from './services/firebaseService';
+  CategoryInfo
+} from './services/supabaseService';
 
-import { isFirebaseConfigured } from './firebase';
+import { isSupabaseConfigured } from './supabase';
 
 // --- Types ---
 
@@ -64,7 +64,7 @@ type Status = 'Public' | 'Confidential';
 
 const INITIAL_DOCS: DocumentData[] = [];
 
-const INITIAL_CATEGORIES: FirebaseCategoryInfo[] = [];
+const INITIAL_CATEGORIES: CategoryInfo[] = [];
 
 const AVAILABLE_ICONS = [
   { name: 'Folder', icon: Folder },
@@ -561,7 +561,7 @@ const UploadModal = ({
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
-  categories: FirebaseCategoryInfo[], 
+  categories: CategoryInfo[], 
   onUpload: (doc: any, file?: File) => Promise<void>,
   editingDoc?: DocumentData | null,
   onAddCategory: () => void
@@ -730,7 +730,7 @@ const UploadModal = ({
                       className="w-full px-4 py-3 bg-slate-100 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all outline-none appearance-none"
                     >
                       {categories.map(cat => {
-                        const getPath = (c: FirebaseCategoryInfo): string => {
+                        const getPath = (c: CategoryInfo): string => {
                           if (!c.parentId) return c.name;
                           const parent = categories.find(p => p.name === c.parentId);
                           return parent ? `${getPath(parent)} > ${c.name}` : c.name;
@@ -811,16 +811,14 @@ const UploadModal = ({
               </button>
               <button 
                 onClick={handleSubmit}
-                disabled={isSaving || !isFirebaseConfigured}
-                className={`flex-1 py-3 rounded-2xl bg-blue-600 text-white font-semibold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 ${isSaving || !isFirebaseConfigured ? 'opacity-70 cursor-not-allowed' : ''}`}
+                disabled={isSaving}
+                className={`flex-1 py-3 rounded-2xl bg-blue-600 text-white font-semibold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
                 {isSaving ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                     Menyimpan...
                   </>
-                ) : !isFirebaseConfigured ? (
-                  'Firebase Belum Siap'
                 ) : (
                   editingDoc ? 'Simpan Perubahan' : 'Simpan Dokumen'
                 )}
@@ -843,8 +841,8 @@ const FolderModal = ({
   isOpen: boolean, 
   onClose: () => void, 
   onSave: (name: string, icon: string, parentId: string | null, color?: string) => void,
-  editingFolder: FirebaseCategoryInfo | null,
-  categories: FirebaseCategoryInfo[]
+  editingFolder: CategoryInfo | null,
+  categories: CategoryInfo[]
 }) => {
   const [name, setName] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('Folder');
@@ -994,7 +992,7 @@ export default function App() {
   const [selectedDoc, setSelectedDoc] = useState<DocumentData | null>(null);
   const [editingDoc, setEditingDoc] = useState<DocumentData | null>(null);
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
-  const [editingFolder, setEditingFolder] = useState<FirebaseCategoryInfo | null>(null);
+  const [editingFolder, setEditingFolder] = useState<CategoryInfo | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   
@@ -1022,23 +1020,19 @@ export default function App() {
   });
   
   const [documents, setDocuments] = useState<DocumentData[]>([]);
-  const [categories, setCategories] = useState<FirebaseCategoryInfo[]>([]);
+  const [categories, setCategories] = useState<CategoryInfo[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasPermissionError, setHasPermissionError] = useState(false);
 
   useEffect(() => {
     const unsubDocs = subscribeToDocuments(
       (docs) => {
         setDocuments(docs);
         setIsLoading(false);
-        setHasPermissionError(false);
       },
       (error) => {
         setIsLoading(false);
-        if (error.code === 'permission-denied') {
-          setHasPermissionError(true);
-        }
+        console.error("Subscription error:", error);
       }
     );
     const unsubCats = subscribeToCategories((cats) => {
@@ -1064,18 +1058,8 @@ export default function App() {
       setEditingDoc(null);
     } catch (error: any) {
       console.error("Error uploading document:", error);
-      let errorMsg = "Gagal mengunggah dokumen. Silakan coba lagi.";
-      
-      if (error.code === 'permission-denied') {
-        errorMsg = "Akses ditolak. Pastikan Security Rules di Firebase sudah diatur ke 'allow read, write: if true;'.";
-      } else if (error.message === 'Firebase not configured') {
-        errorMsg = "Firebase belum dikonfigurasi. Silakan isi API Key di panel Secrets.";
-      } else if (error.code === 'storage/unauthorized') {
-        errorMsg = "Akses Storage ditolak. Pastikan Security Rules di Firebase Storage sudah diatur.";
-      }
-      
-      alert(errorMsg);
-      throw error; // Re-throw to let the modal know it failed
+      alert("Gagal mengunggah dokumen. Silakan coba lagi.");
+      throw error;
     }
   };
 
@@ -1121,7 +1105,7 @@ export default function App() {
     setIsFolderModalOpen(true);
   };
 
-  const handleEditFolderClick = (e: React.MouseEvent, folder: FirebaseCategoryInfo) => {
+  const handleEditFolderClick = (e: React.MouseEvent, folder: CategoryInfo) => {
     e.stopPropagation();
     setEditingFolder(folder);
     setIsFolderModalOpen(true);
@@ -1355,26 +1339,14 @@ export default function App() {
           </div>
         </header>
 
-        {!isFirebaseConfigured && (
+        {!isSupabaseConfigured && (
           <div className="mx-6 lg:mx-10 mt-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-3 text-amber-800">
             <div className="p-2 bg-amber-100 rounded-xl">
               <Settings size={20} />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-bold">Firebase Belum Dikonfigurasi</p>
-              <p className="text-xs opacity-80">Silakan atur API Key Firebase di Secrets panel untuk mengaktifkan penyimpanan cloud.</p>
-            </div>
-          </div>
-        )}
-
-        {hasPermissionError && (
-          <div className="mx-6 lg:mx-10 mt-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-800">
-            <div className="p-2 bg-red-100 rounded-xl">
-              <ShieldCheck size={20} />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-bold">Akses Ditolak (Permission Denied)</p>
-              <p className="text-xs opacity-80">Firebase menolak akses. Pastikan Anda telah mengatur "Security Rules" di Firebase Console menjadi "allow read, write: if true;".</p>
+              <p className="text-sm font-bold">Supabase Belum Dikonfigurasi</p>
+              <p className="text-xs opacity-80">Silakan atur URL dan Anon Key Supabase di Secrets panel untuk mengaktifkan penyimpanan cloud.</p>
             </div>
           </div>
         )}
