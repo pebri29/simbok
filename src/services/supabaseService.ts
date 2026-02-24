@@ -23,6 +23,13 @@ export interface CategoryInfo {
   parentId?: string | null;
 }
 
+export interface AppSettings {
+  app_name: string;
+  profile_url: string;
+  admin_label: string;
+  super_admin_label: string;
+}
+
 // --- Documents ---
 
 export const subscribeToDocuments = (callback: (docs: DocumentData[]) => void, onError?: (err: any) => void) => {
@@ -140,5 +147,33 @@ export const saveCategory = async (category: CategoryInfo) => {
 export const removeCategory = async (id: string) => {
   if (!isSupabaseConfigured) throw new Error("Supabase not configured");
   const { error } = await supabase.from('categories').delete().eq('id', id);
+  if (error) throw error;
+};
+
+// --- Settings ---
+
+export const subscribeToSettings = (callback: (settings: AppSettings) => void) => {
+  if (!isSupabaseConfigured) return () => {};
+
+  supabase.from('app_settings').select('*').single().then(({ data }) => {
+    if (data) callback(data as AppSettings);
+  });
+
+  const subscription = supabase
+    .channel('settings_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, async () => {
+      const { data } = await supabase.from('app_settings').select('*').single();
+      if (data) callback(data as AppSettings);
+    })
+    .subscribe();
+
+  return () => {
+    subscription.unsubscribe();
+  };
+};
+
+export const updateSettings = async (settings: Partial<AppSettings>) => {
+  if (!isSupabaseConfigured) throw new Error("Supabase not configured");
+  const { error } = await supabase.from('app_settings').update(settings).eq('id', 1);
   if (error) throw error;
 };

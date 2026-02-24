@@ -26,7 +26,10 @@ import {
   ChevronRight,
   ShieldCheck,
   Globe,
-  Edit2
+  Edit2,
+  Lock,
+  Upload,
+  CloudDownload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -50,11 +53,14 @@ import {
   removeDocument, 
   saveCategory, 
   removeCategory,
+  subscribeToSettings,
+  updateSettings,
   DocumentData,
-  CategoryInfo
+  CategoryInfo,
+  AppSettings
 } from './services/supabaseService';
 
-import { isSupabaseConfigured } from './supabase';
+import { isSupabaseConfigured, supabase } from './supabase';
 
 // --- Types ---
 
@@ -1023,6 +1029,16 @@ export default function App() {
   const [categories, setCategories] = useState<CategoryInfo[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [appSettings, setAppSettings] = useState<AppSettings>({
+    app_name: 'E-Arsip Kantor',
+    profile_url: '',
+    admin_label: 'Admin Kantor',
+    super_admin_label: 'Super Admin'
+  });
+  const [isSettingsLocked, setIsSettingsLocked] = useState(true);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const unsubDocs = subscribeToDocuments(
@@ -1038,10 +1054,14 @@ export default function App() {
     const unsubCats = subscribeToCategories((cats) => {
       setCategories(cats);
     });
+    const unsubSettings = subscribeToSettings((settings) => {
+      setAppSettings(settings);
+    });
 
     return () => {
       unsubDocs();
       unsubCats();
+      unsubSettings();
     };
   }, []);
 
@@ -1078,6 +1098,67 @@ export default function App() {
       window.open(doc.fileUrl, '_blank');
     } else {
       alert("Tautan unduhan tidak tersedia.");
+    }
+  };
+
+  const handleSettingsClick = () => {
+    if (isSettingsLocked) {
+      setShowPasswordModal(true);
+    } else {
+      setActiveMenu('settings');
+    }
+  };
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === 'febri05941') {
+      setIsSettingsLocked(false);
+      setShowPasswordModal(false);
+      setActiveMenu('settings');
+      setPasswordInput('');
+    } else {
+      alert('Password salah!');
+    }
+  };
+
+  const handleExportToGoogleDrive = async () => {
+    setIsExporting(true);
+    try {
+      const backupData = {
+        documents,
+        categories,
+        settings: appSettings,
+        exportedAt: new Date().toISOString()
+      };
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `backup_arsip_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      alert('Data berhasil ditarik! File backup JSON telah diunduh.');
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Gagal mengekspor data.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleUpdateProfile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        const timestamp = Date.now();
+        const path = `profiles/${timestamp}_${file.name}`;
+        const { error } = await supabase.storage.from('documents').upload(path, file);
+        if (error) throw error;
+        const { data: urlData } = supabase.storage.from('documents').getPublicUrl(path);
+        await updateSettings({ profile_url: urlData.publicUrl });
+      } catch (error) {
+        console.error('Profile upload error:', error);
+        alert('Gagal mengunggah profil.');
+      }
     }
   };
 
@@ -1224,7 +1305,7 @@ export default function App() {
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
               <Archive size={24} />
             </div>
-            <h1 className="text-xl font-bold tracking-tight">Simbok <span className="text-blue-600">App</span></h1>
+            <h1 className="text-xl font-bold tracking-tight">{appSettings.app_name}</h1>
           </div>
 
           <nav className="flex-1 flex flex-col gap-2">
@@ -1286,19 +1367,23 @@ export default function App() {
             <SidebarItem 
               icon={Settings} 
               label="Pengaturan" 
-              active={false} 
-              onClick={() => {}}
+              active={activeMenu === 'settings'} 
+              onClick={handleSettingsClick}
             />
           </nav>
 
           <div className="mt-auto pt-6 border-t border-slate-100">
             <div className="flex items-center gap-3 p-2 mb-4">
               <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden">
-                <img src="https://picsum.photos/seed/user1/100/100" alt="User" referrerPolicy="no-referrer" />
+                {appSettings.profile_url ? (
+                  <img src={appSettings.profile_url} alt="User" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                ) : (
+                  <User size={20} className="text-slate-400" />
+                )}
               </div>
               <div>
-                <p className="text-sm font-bold">Admin Kantor</p>
-                <p className="text-xs text-slate-500">Super Admin</p>
+                <p className="text-sm font-bold">{appSettings.admin_label}</p>
+                <p className="text-xs text-slate-500">{appSettings.super_admin_label}</p>
               </div>
             </div>
             <button className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-red-500 hover:bg-red-50 transition-all">
@@ -1327,6 +1412,19 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4 ml-4">
+            <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-slate-100/50 rounded-2xl border border-slate-200/50">
+              <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-slate-500 overflow-hidden">
+                {appSettings.profile_url ? (
+                  <img src={appSettings.profile_url} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <User size={16} />
+                )}
+              </div>
+              <div className="text-left">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none mb-1">Admin</p>
+                <p className="text-xs font-bold text-slate-700 leading-none">{appSettings.admin_label}</p>
+              </div>
+            </div>
             <button className="relative p-3 rounded-2xl text-slate-500 hover:bg-slate-100 transition-all">
               <Bell size={20} />
               <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
@@ -1785,9 +1883,169 @@ export default function App() {
                 </div>
               </motion.div>
             )}
+            {/* Settings View */}
+            {activeMenu === 'settings' && (
+              <motion.div 
+                key="settings"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-8"
+              >
+                <div className="bg-white rounded-[32px] p-8 lg:p-10 shadow-sm border border-slate-100">
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                      <Settings size={24} />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-900">Pengaturan Aplikasi</h2>
+                      <p className="text-slate-500">Kustomisasi identitas dan kelola data aplikasi Anda.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                    <div className="space-y-6">
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wider">Nama Aplikasi</label>
+                        <input 
+                          type="text" 
+                          value={appSettings.app_name}
+                          onChange={(e) => updateSettings({ app_name: e.target.value })}
+                          className="w-full px-4 py-3 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all outline-none"
+                          placeholder="Contoh: E-Arsip Kantor"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wider">Label Admin</label>
+                        <input 
+                          type="text" 
+                          value={appSettings.admin_label}
+                          onChange={(e) => updateSettings({ admin_label: e.target.value })}
+                          className="w-full px-4 py-3 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all outline-none"
+                          placeholder="Contoh: Admin Kantor"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-2 uppercase tracking-wider">Label Jabatan</label>
+                        <input 
+                          type="text" 
+                          value={appSettings.super_admin_label}
+                          onChange={(e) => updateSettings({ super_admin_label: e.target.value })}
+                          className="w-full px-4 py-3 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all outline-none"
+                          placeholder="Contoh: Super Admin"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-6">
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-4 uppercase tracking-wider">Foto Profil</label>
+                        <div className="flex items-center gap-6">
+                          <div className="w-24 h-24 rounded-3xl bg-slate-100 flex items-center justify-center overflow-hidden border-2 border-dashed border-slate-200">
+                            {appSettings.profile_url ? (
+                              <img src={appSettings.profile_url} alt="Profile" className="w-full h-full object-cover" />
+                            ) : (
+                              <User size={32} className="text-slate-300" />
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <input 
+                              type="file" 
+                              id="profile-upload" 
+                              className="hidden" 
+                              accept="image/*"
+                              onChange={handleUpdateProfile}
+                            />
+                            <label 
+                              htmlFor="profile-upload"
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 cursor-pointer transition-all"
+                            >
+                              <Upload size={16} />
+                              Ganti Foto
+                            </label>
+                            <p className="text-xs text-slate-400 mt-2">Format: JPG, PNG. Maks 2MB.</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-6 border-t border-slate-100">
+                        <label className="block text-sm font-bold text-slate-700 mb-4 uppercase tracking-wider">Manajemen Data</label>
+                        <button 
+                          onClick={handleExportToGoogleDrive}
+                          disabled={isExporting}
+                          className="w-full flex items-center justify-center gap-3 px-6 py-4 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100 disabled:opacity-50"
+                        >
+                          {isExporting ? (
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          ) : (
+                            <CloudDownload size={20} />
+                          )}
+                          Tarik Data ke Google Drive
+                        </button>
+                        <p className="text-xs text-slate-400 mt-3 text-center italic">Fungsi ini akan mengunduh file backup JSON yang berisi seluruh data arsip Anda.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            onClick={() => setShowPasswordModal(false)}
+          />
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            className="relative w-full max-w-md bg-white rounded-[32px] p-8 shadow-2xl"
+          >
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Lock size={32} />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900">Area Terbatas</h3>
+              <p className="text-slate-500 mt-2">Masukkan password untuk mengakses pengaturan.</p>
+            </div>
+
+            <form onSubmit={handlePasswordSubmit} className="space-y-6">
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                <input 
+                  type="password" 
+                  autoFocus
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="Password"
+                  className="w-full pl-12 pr-4 py-4 bg-slate-50 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all outline-none font-mono"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setShowPasswordModal(false)}
+                  className="flex-1 px-6 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  Batal
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 px-6 py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                >
+                  Masuk
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
 
       {/* --- Mobile Bottom Nav --- */}
       {isMobile && (
