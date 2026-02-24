@@ -983,12 +983,22 @@ export default function App() {
   const [categories, setCategories] = useState<FirebaseCategoryInfo[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasPermissionError, setHasPermissionError] = useState(false);
 
   useEffect(() => {
-    const unsubDocs = subscribeToDocuments((docs) => {
-      setDocuments(docs);
-      setIsLoading(false);
-    });
+    const unsubDocs = subscribeToDocuments(
+      (docs) => {
+        setDocuments(docs);
+        setIsLoading(false);
+        setHasPermissionError(false);
+      },
+      (error) => {
+        setIsLoading(false);
+        if (error.code === 'permission-denied') {
+          setHasPermissionError(true);
+        }
+      }
+    );
     const unsubCats = subscribeToCategories((cats) => {
       setCategories(cats);
     });
@@ -1309,6 +1319,18 @@ export default function App() {
             <div className="flex-1">
               <p className="text-sm font-bold">Firebase Belum Dikonfigurasi</p>
               <p className="text-xs opacity-80">Silakan atur API Key Firebase di Secrets panel untuk mengaktifkan penyimpanan cloud.</p>
+            </div>
+          </div>
+        )}
+
+        {hasPermissionError && (
+          <div className="mx-6 lg:mx-10 mt-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 text-red-800">
+            <div className="p-2 bg-red-100 rounded-xl">
+              <ShieldCheck size={20} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-bold">Akses Ditolak (Permission Denied)</p>
+              <p className="text-xs opacity-80">Firebase menolak akses. Pastikan Anda telah mengatur "Security Rules" di Firebase Console menjadi "allow read, write: if true;".</p>
             </div>
           </div>
         )}

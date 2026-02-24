@@ -43,7 +43,10 @@ export interface DocumentData {
 }
 
 // --- Documents ---
-export const subscribeToDocuments = (callback: (docs: DocumentData[]) => void) => {
+export const subscribeToDocuments = (
+  callback: (docs: DocumentData[]) => void,
+  onError?: (error: any) => void
+) => {
   if (!isFirebaseConfigured || !db) {
     callback([]);
     return () => {};
@@ -57,6 +60,7 @@ export const subscribeToDocuments = (callback: (docs: DocumentData[]) => void) =
     },
     (error) => {
       console.error("Firestore subscription error (documents):", error);
+      if (onError) onError(error);
       callback([]);
     }
   );
