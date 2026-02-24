@@ -562,7 +562,7 @@ const UploadModal = ({
   isOpen: boolean, 
   onClose: () => void, 
   categories: FirebaseCategoryInfo[], 
-  onUpload: (doc: any, file?: File) => void,
+  onUpload: (doc: any, file?: File) => Promise<void>,
   editingDoc?: DocumentData | null,
   onAddCategory: () => void
 }) => {
@@ -574,6 +574,7 @@ const UploadModal = ({
   const [classification, setClassification] = useState('Umum');
   const [description, setDescription] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -605,6 +606,13 @@ const UploadModal = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      
+      // Check file size (10MB limit)
+      if (file.size > 10 * 1024 * 1024) {
+        alert('Ukuran berkas terlalu besar. Maksimal 10MB.');
+        return;
+      }
+
       setSelectedFile(file);
       if (!name) {
         setName(file.name.replace(/\.[^/.]+$/, ""));
@@ -612,39 +620,43 @@ const UploadModal = ({
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name) {
       alert('Nama berkas harus diisi');
       return;
     }
-    
-    const [year, month, day] = docDate.split('-');
-    const formattedDate = `${day}-${month}-${year}`;
 
-    const fileType = selectedFile?.type || (editingDoc?.fileType || 'application/pdf');
-    
-    // Create a local URL for the file if a new one was selected
-    let fileUrl = editingDoc?.fileUrl;
-    if (selectedFile) {
-      fileUrl = URL.createObjectURL(selectedFile);
+    if (!editingDoc && !selectedFile) {
+      alert('Silakan pilih berkas yang akan diunggah');
+      return;
     }
 
-    onUpload({
-      id: editingDoc?.id,
-      name: name.endsWith('.pdf') ? name : `${name}.pdf`,
-      category,
-      date: formattedDate,
-      status,
-      size: selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : (editingDoc?.size || '0 MB'),
-      letterNumber,
-      classification,
-      description,
-      fileUrl: editingDoc?.fileUrl,
-      fileType: selectedFile?.type || editingDoc?.fileType,
-      storagePath: editingDoc?.storagePath
-    }, selectedFile || undefined);
-    
-    onClose();
+    setIsSaving(true);
+    try {
+      const [year, month, day] = docDate.split('-');
+      const formattedDate = `${day}-${month}-${year}`;
+
+      await onUpload({
+        id: editingDoc?.id,
+        name: name.endsWith('.pdf') ? name : `${name}.pdf`,
+        category,
+        date: formattedDate,
+        status,
+        size: selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : (editingDoc?.size || '0 MB'),
+        letterNumber,
+        classification,
+        description,
+        fileUrl: editingDoc?.fileUrl,
+        fileType: selectedFile?.type || editingDoc?.fileType,
+        storagePath: editingDoc?.storagePath
+      }, selectedFile || undefined);
+      
+      onClose();
+    } catch (error) {
+      // Error is handled in App.tsx handleUpload
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -799,9 +811,19 @@ const UploadModal = ({
               </button>
               <button 
                 onClick={handleSubmit}
-                className="flex-1 py-3 rounded-2xl bg-blue-600 text-white font-semibold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors"
+                disabled={isSaving || !isFirebaseConfigured}
+                className={`flex-1 py-3 rounded-2xl bg-blue-600 text-white font-semibold shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 ${isSaving || !isFirebaseConfigured ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
-                {editingDoc ? 'Simpan Perubahan' : 'Simpan Dokumen'}
+                {isSaving ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Menyimpan...
+                  </>
+                ) : !isFirebaseConfigured ? (
+                  'Firebase Belum Siap'
+                ) : (
+                  editingDoc ? 'Simpan Perubahan' : 'Simpan Dokumen'
+                )}
               </button>
             </div>
           </motion.div>
@@ -1040,9 +1062,20 @@ export default function App() {
     try {
       await saveDocument(newDoc, file);
       setEditingDoc(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error uploading document:", error);
-      alert("Gagal mengunggah dokumen. Silakan coba lagi.");
+      let errorMsg = "Gagal mengunggah dokumen. Silakan coba lagi.";
+      
+      if (error.code === 'permission-denied') {
+        errorMsg = "Akses ditolak. Pastikan Security Rules di Firebase sudah diatur ke 'allow read, write: if true;'.";
+      } else if (error.message === 'Firebase not configured') {
+        errorMsg = "Firebase belum dikonfigurasi. Silakan isi API Key di panel Secrets.";
+      } else if (error.code === 'storage/unauthorized') {
+        errorMsg = "Akses Storage ditolak. Pastikan Security Rules di Firebase Storage sudah diatur.";
+      }
+      
+      alert(errorMsg);
+      throw error; // Re-throw to let the modal know it failed
     }
   };
 
