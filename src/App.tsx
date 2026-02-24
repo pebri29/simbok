@@ -1430,57 +1430,10 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="flex flex-col lg:flex-row gap-8"
+                className="space-y-8"
               >
-                {/* Category Sidebar for E-Archive */}
-                <aside className="w-full lg:w-64 space-y-6">
-                  <div className="bento-card p-4">
-                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 px-2">Kategori</h3>
-                    <div className="space-y-1">
-                      <button 
-                        onClick={() => setSelectedFolder(null)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${!selectedFolder ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
-                      >
-                        <Archive size={18} />
-                        <span>Semua Arsip</span>
-                      </button>
-                      {categories.filter(cat => !cat.parentId).map(cat => {
-                        const Icon = ICON_MAP[cat.icon] || Folder;
-                        const isActive = selectedFolder === cat.name;
-                        return (
-                          <div key={cat.name} className="group relative">
-                            <button 
-                              onClick={() => setSelectedFolder(cat.name)}
-                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${isActive ? 'bg-blue-50 text-blue-600 font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
-                            >
-                              <Icon size={18} />
-                              <span className="truncate flex-1 text-left">{cat.name}</span>
-                            </button>
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                              <button 
-                                onClick={(e) => handleEditFolderClick(e, cat)}
-                                className="p-1 text-slate-400 hover:text-blue-600"
-                              >
-                                <Edit2 size={12} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="bento-card p-4 bg-blue-600 text-white border-none">
-                    <h4 className="font-bold mb-2">Penyimpanan</h4>
-                    <div className="w-full bg-blue-400/30 h-2 rounded-full overflow-hidden mb-2">
-                      <div className="bg-white h-full" style={{ width: '45%' }}></div>
-                    </div>
-                    <p className="text-xs text-blue-100">45.2 GB dari 100 GB digunakan</p>
-                  </div>
-                </aside>
-
                 {/* Main Archive Content */}
-                <div className="flex-1 space-y-8">
+                <div className="space-y-8">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
                       {selectedFolder && (
@@ -1496,7 +1449,7 @@ export default function App() {
                       )}
                       <div>
                         <div className="flex items-center gap-2 text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">
-                          <span className="cursor-pointer hover:underline" onClick={() => setSelectedFolder(null)}>E-Archive</span>
+                          <span className="cursor-pointer hover:underline" onClick={() => setSelectedFolder(null)}>Kategori</span>
                           {selectedFolder && (
                             <>
                               <ChevronRight size={12} className="text-slate-300" />
@@ -1504,9 +1457,9 @@ export default function App() {
                             </>
                           )}
                         </div>
-                        <h2 className="text-3xl font-bold text-slate-900">{selectedFolder || 'E-Archive'}</h2>
+                        <h2 className="text-3xl font-bold text-slate-900">{selectedFolder || 'Kategori'}</h2>
                         <p className="text-slate-500 mt-1 text-sm">
-                          {selectedFolder ? `Menampilkan berkas dalam folder ${selectedFolder}` : 'Kelola folder dan telusuri semua arsip digital.'}
+                          {selectedFolder ? `Menampilkan berkas dalam kategori ${selectedFolder}` : 'Kelola kategori dan telusuri semua arsip digital.'}
                         </p>
                       </div>
                     </div>
