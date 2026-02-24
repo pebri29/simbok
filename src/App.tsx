@@ -43,36 +43,28 @@ import {
   CartesianGrid 
 } from 'recharts';
 
+import { 
+  subscribeToDocuments, 
+  subscribeToCategories, 
+  saveDocument, 
+  removeDocument, 
+  saveCategory, 
+  removeCategory,
+  DocumentData,
+  CategoryInfo as FirebaseCategoryInfo
+} from './services/firebaseService';
+
+import { isFirebaseConfigured } from './firebase';
+
 // --- Types ---
 
 type Status = 'Public' | 'Confidential';
 
-interface CategoryInfo {
-  name: string;
-  color: string;
-  icon: string;
-  parentId?: string | null;
-}
-
-interface Document {
-  id: string;
-  name: string;
-  category: string;
-  date: string;
-  status: Status;
-  size: string;
-  letterNumber: string;
-  classification: string;
-  description: string;
-  fileUrl?: string;
-  fileType?: string;
-}
-
 // --- Initial Data ---
 
-const INITIAL_DOCS: Document[] = [];
+const INITIAL_DOCS: DocumentData[] = [];
 
-const INITIAL_CATEGORIES: CategoryInfo[] = [];
+const INITIAL_CATEGORIES: FirebaseCategoryInfo[] = [];
 
 const AVAILABLE_ICONS = [
   { name: 'Folder', icon: Folder },
@@ -209,7 +201,7 @@ const PreviewModal = ({
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
-  doc: Document | null,
+  doc: DocumentData | null,
   onDelete: (id: string) => void
 }) => {
   if (!doc) return null;
@@ -372,12 +364,12 @@ const DocumentView = ({
   onPreview,
   onDownload
 }: { 
-  docs: Document[], 
+  docs: DocumentData[], 
   viewMode: 'list' | 'grid', 
   onDelete: (id: string) => void,
-  onEdit: (doc: Document) => void,
-  onPreview: (doc: Document) => void,
-  onDownload: (doc: Document) => void
+  onEdit: (doc: DocumentData) => void,
+  onPreview: (doc: DocumentData) => void,
+  onDownload: (doc: DocumentData) => void
 }) => {
   if (viewMode === 'list') {
     return (
@@ -569,9 +561,9 @@ const UploadModal = ({
 }: { 
   isOpen: boolean, 
   onClose: () => void, 
-  categories: CategoryInfo[], 
-  onUpload: (doc: any) => void,
-  editingDoc?: Document | null,
+  categories: FirebaseCategoryInfo[], 
+  onUpload: (doc: any, file?: File) => void,
+  editingDoc?: DocumentData | null,
   onAddCategory: () => void
 }) => {
   const [name, setName] = useState('');
@@ -638,18 +630,19 @@ const UploadModal = ({
     }
 
     onUpload({
-      id: editingDoc?.id || Math.random().toString(36).substr(2, 9),
+      id: editingDoc?.id,
       name: name.endsWith('.pdf') ? name : `${name}.pdf`,
       category,
       date: formattedDate,
       status,
-      size: selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : (editingDoc?.size || `${(Math.random() * 5 + 0.1).toFixed(1)} MB`),
+      size: selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : (editingDoc?.size || '0 MB'),
       letterNumber,
       classification,
       description,
-      fileUrl,
-      fileType
-    });
+      fileUrl: editingDoc?.fileUrl,
+      fileType: selectedFile?.type || editingDoc?.fileType,
+      storagePath: editingDoc?.storagePath
+    }, selectedFile || undefined);
     
     onClose();
   };
@@ -725,7 +718,7 @@ const UploadModal = ({
                       className="w-full px-4 py-3 bg-slate-100 border-transparent rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all outline-none appearance-none"
                     >
                       {categories.map(cat => {
-                        const getPath = (c: CategoryInfo): string => {
+                        const getPath = (c: FirebaseCategoryInfo): string => {
                           if (!c.parentId) return c.name;
                           const parent = categories.find(p => p.name === c.parentId);
                           return parent ? `${getPath(parent)} > ${c.name}` : c.name;
@@ -828,8 +821,8 @@ const FolderModal = ({
   isOpen: boolean, 
   onClose: () => void, 
   onSave: (name: string, icon: string, parentId: string | null) => void,
-  editingFolder: CategoryInfo | null,
-  categories: CategoryInfo[]
+  editingFolder: FirebaseCategoryInfo | null,
+  categories: FirebaseCategoryInfo[]
 }) => {
   const [name, setName] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('Folder');
@@ -956,10 +949,10 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
-  const [editingDoc, setEditingDoc] = useState<Document | null>(null);
+  const [selectedDoc, setSelectedDoc] = useState<DocumentData | null>(null);
+  const [editingDoc, setEditingDoc] = useState<DocumentData | null>(null);
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
-  const [editingFolder, setEditingFolder] = useState<CategoryInfo | null>(null);
+  const [editingFolder, setEditingFolder] = useState<FirebaseCategoryInfo | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobile, setIsMobile] = useState(false);
   
@@ -986,9 +979,25 @@ export default function App() {
     endDate: ''
   });
   
-  const [documents, setDocuments] = useState<Document[]>(INITIAL_DOCS);
-  const [categories, setCategories] = useState<CategoryInfo[]>(INITIAL_CATEGORIES);
+  const [documents, setDocuments] = useState<DocumentData[]>([]);
+  const [categories, setCategories] = useState<FirebaseCategoryInfo[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubDocs = subscribeToDocuments((docs) => {
+      setDocuments(docs);
+      setIsLoading(false);
+    });
+    const unsubCats = subscribeToCategories((cats) => {
+      setCategories(cats);
+    });
+
+    return () => {
+      unsubDocs();
+      unsubCats();
+    };
+  }, []);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -997,52 +1006,50 @@ export default function App() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const handleUpload = (newDoc: Document) => {
-    setDocuments(prev => {
-      const exists = prev.find(d => d.id === newDoc.id);
-      if (exists) {
-        return prev.map(d => d.id === newDoc.id ? newDoc : d);
-      } else {
-        return [newDoc, ...prev];
-      }
-    });
-    setEditingDoc(null);
+  const handleUpload = async (newDoc: DocumentData, file?: File) => {
+    try {
+      await saveDocument(newDoc, file);
+      setEditingDoc(null);
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      alert("Gagal mengunggah dokumen. Silakan coba lagi.");
+    }
   };
 
-  const handleEditDoc = (doc: Document) => {
+  const handleEditDoc = (doc: DocumentData) => {
     setEditingDoc(doc);
     setIsUploadOpen(true);
   };
 
-  const handlePreviewDoc = (doc: Document) => {
+  const handlePreviewDoc = (doc: DocumentData) => {
     setSelectedDoc(doc);
     setIsPreviewOpen(true);
   };
 
-  const handleDownloadDoc = (doc: Document) => {
-    // Simulated download
-    const link = document.createElement('a');
-    link.href = '#';
-    link.download = doc.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    alert(`Mengunduh berkas: ${doc.name}`);
+  const handleDownloadDoc = (doc: DocumentData) => {
+    if (doc.fileUrl) {
+      window.open(doc.fileUrl, '_blank');
+    } else {
+      alert("Tautan unduhan tidak tersedia.");
+    }
   };
 
-  const handleSaveFolder = (name: string, icon: string, parentId: string | null) => {
-    if (editingFolder) {
-      // Edit existing folder
-      const oldName = editingFolder.name;
-      setCategories(prev => prev.map(c => c.name === oldName ? { ...c, name, icon, parentId } : c));
-      setDocuments(prev => prev.map(doc => doc.category === oldName ? { ...doc, category: name } : doc));
-      if (selectedFolder === oldName) setSelectedFolder(name);
-      setEditingFolder(null);
-    } else {
-      // Add new folder
-      if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) return;
-      const color = CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length];
-      setCategories(prev => [...prev, { name, color, icon, parentId }]);
+  const handleSaveFolder = async (name: string, icon: string, parentId: string | null) => {
+    try {
+      if (editingFolder) {
+        await saveCategory({ ...editingFolder, name, icon, parentId });
+        setEditingFolder(null);
+      } else {
+        if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+          alert("Kategori dengan nama ini sudah ada.");
+          return;
+        }
+        const color = CATEGORY_COLORS[categories.length % CATEGORY_COLORS.length];
+        await saveCategory({ name, color, icon, parentId });
+      }
+    } catch (error) {
+      console.error("Error saving category:", error);
+      alert("Gagal menyimpan kategori.");
     }
   };
 
@@ -1051,26 +1058,29 @@ export default function App() {
     setIsFolderModalOpen(true);
   };
 
-  const handleEditFolderClick = (e: React.MouseEvent, folder: CategoryInfo) => {
+  const handleEditFolderClick = (e: React.MouseEvent, folder: FirebaseCategoryInfo) => {
     e.stopPropagation();
     setEditingFolder(folder);
     setIsFolderModalOpen(true);
   };
 
   const handleDeleteFolder = (name: string) => {
+    const category = categories.find(c => c.name === name);
+    if (!category?.id) return;
+
     setConfirmConfig({
       isOpen: true,
       title: 'Hapus Kategori',
       message: `Apakah Anda yakin ingin menghapus kategori "${name}"? Semua berkas di dalamnya akan tetap ada namun tanpa kategori.`,
-      onConfirm: () => {
-        setCategories(prev => prev
-          .filter(c => c.name !== name)
-          .map(c => c.parentId === name ? { ...c, parentId: null } : c)
-        );
-        setDocuments(prev => prev.map(doc => doc.category === name ? { ...doc, category: 'Uncategorized' } : doc));
-        if (selectedFolder === name) {
-          const currentCat = categories.find(c => c.name === name);
-          setSelectedFolder(currentCat?.parentId || null);
+      onConfirm: async () => {
+        try {
+          await removeCategory(category.id!);
+          if (selectedFolder === name) {
+            setSelectedFolder(category.parentId || null);
+          }
+        } catch (error) {
+          console.error("Error deleting category:", error);
+          alert("Gagal menghapus kategori.");
         }
       }
     });
@@ -1082,10 +1092,15 @@ export default function App() {
       isOpen: true,
       title: 'Hapus Dokumen',
       message: `Apakah Anda yakin ingin menghapus dokumen "${doc?.name || 'ini'}"?`,
-      onConfirm: () => {
-        setDocuments(prev => prev.filter(d => d.id !== id));
-        setIsPreviewOpen(false);
-        setSelectedDoc(null);
+      onConfirm: async () => {
+        try {
+          await removeDocument(id, doc?.storagePath);
+          setIsPreviewOpen(false);
+          setSelectedDoc(null);
+        } catch (error) {
+          console.error("Error deleting document:", error);
+          alert("Gagal menghapus dokumen.");
+        }
       }
     });
   };
@@ -1126,7 +1141,17 @@ export default function App() {
     return matchesSimpleSearch && matchesFolder;
   });
 
-  const totalSize = (documents.length * 1.2).toFixed(1); // Simulated size
+  const totalSize = (documents.reduce((acc, doc) => {
+    const size = parseFloat(doc.size) || 0;
+    return acc + size;
+  }, 0) / 1024).toFixed(2); // Assuming size is in MB, convert to GB for display
+
+  const recentDocsCount = documents.filter(doc => {
+    const docDate = new Date(doc.date.split('-').reverse().join('-'));
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    return docDate >= sevenDaysAgo;
+  }).length;
 
   // --- Chart Data Preparation ---
   const categoryStats = categories.map(cat => ({
@@ -1276,10 +1301,35 @@ export default function App() {
           </div>
         </header>
 
+        {!isFirebaseConfigured && (
+          <div className="mx-6 lg:mx-10 mt-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-3 text-amber-800">
+            <div className="p-2 bg-amber-100 rounded-xl">
+              <Settings size={20} />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-bold">Firebase Belum Dikonfigurasi</p>
+              <p className="text-xs opacity-80">Silakan atur API Key Firebase di Secrets panel untuk mengaktifkan penyimpanan cloud.</p>
+            </div>
+          </div>
+        )}
+
         {/* Content Area */}
-        <div className="p-6 lg:p-10 pb-32 lg:pb-10">
+        <div className="p-6 lg:p-10 pb-32 lg:pb-10 relative min-h-[calc(100vh-5rem)]">
           <AnimatePresence mode="wait">
-            {activeMenu === 'dashboard' ? (
+            {isLoading ? (
+              <motion.div 
+                key="loading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 flex items-center justify-center bg-[#F8FAFC]/80 backdrop-blur-sm z-20"
+              >
+                <div className="flex flex-col items-center gap-4">
+                  <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-slate-500 font-medium">Memuat data...</p>
+                </div>
+              </motion.div>
+            ) : activeMenu === 'dashboard' ? (
               <motion.div 
                 key="dashboard"
                 initial={{ opacity: 0, y: 20 }}
@@ -1311,7 +1361,7 @@ export default function App() {
                   }} className="cursor-pointer transition-transform hover:scale-[1.02]">
                     <StatCard 
                       label="Dokumen Baru" 
-                      value="24" 
+                      value={recentDocsCount.toString()} 
                       subValue="Dalam 7 hari terakhir" 
                       icon={Plus} 
                       color="bg-purple-100 text-purple-600"
